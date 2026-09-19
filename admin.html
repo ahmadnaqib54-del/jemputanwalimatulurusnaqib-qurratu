@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSVP Admin — Ahmad & Qurratu 'Aini</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--ink:#403a37;--text:#514844;--muted:#81766f;--line:#eadbd4;--bg:#f8f1ec;--card:#fffaf6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
+.wrap{width:min(1100px,94%);margin:30px auto}
+h1,h2{color:var(--ink)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:18px 0;box-shadow:0 8px 25px rgba(80,60,50,.06)}
+input{width:100%;padding:11px;border:1px solid #dfd1cb;border-radius:9px;font-size:14px}
+button{border:0;border-radius:9px;padding:11px 16px;cursor:pointer;background:#6c625b;color:white}
+button.secondary{background:#9a8b80}
+.login{max-width:420px;margin:10vh auto}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.stat{padding:18px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.stat b{display:block;font-size:28px;color:var(--ink);margin-top:5px}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:11px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--muted)}
+.badge{padding:4px 8px;border-radius:20px;background:#f2e5df}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.hidden{display:none!important}
+.msg{margin-top:10px;font-size:13px;color:#9b5b55}
+@media(max-width:650px){.stats{grid-template-columns:1fr}.top{align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="loginCard" class="card login">
+    <h1>RSVP Admin</h1>
+    <p>Log masuk untuk melihat senarai tetamu.</p>
+    <input id="email" type="email" placeholder="Email admin">
+    <br><br>
+    <input id="password" type="password" placeholder="Password">
+    <br><br>
+    <button id="loginBtn">LOG MASUK</button>
+    <div id="loginMsg" class="msg"></div>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <div class="top">
+      <div>
+        <h1>Senarai RSVP</h1>
+        <p>Ahmad Naqib &amp; Qurratu 'Aini Syazwani</p>
+      </div>
+      <div class="actions">
+        <button id="exportBtn" class="secondary">EXPORT CSV</button>
+        <button id="logoutBtn">LOG KELUAR</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">RSVP <b id="totalRsvp">0</b></div>
+      <div class="stat">Hadir <b id="totalAttending">0</b></div>
+      <div class="stat">Jumlah Tetamu <b id="totalGuests">0</b></div>
+    </div>
+
+    <div class="card">
+      <input id="search" placeholder="Cari nama atau no. telefon...">
+    </div>
+
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nama</th>
+            <th>Telefon</th>
+            <th>Kehadiran</th>
+            <th>Jumlah</th>
+            <th>Ucapan</th>
+            <th>Tarikh</th>
+          </tr>
+        </thead>
+        <tbody id="rsvpRows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "PASTE_YOUR_SUPABASE_PROJECT_URL_HERE";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let allRows = [];
+
+const $ = id => document.getElementById(id);
+
+$("loginBtn").addEventListener("click", async () => {
+  $("loginMsg").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+  if(error){ $("loginMsg").textContent = "Login gagal: " + error.message; return; }
+  showDashboard();
+});
+
+$("logoutBtn").addEventListener("click", async () => {
+  await sb.auth.signOut();
+  $("dashboard").classList.add("hidden");
+  $("loginCard").classList.remove("hidden");
+});
+
+async function showDashboard(){
+  $("loginCard").classList.add("hidden");
+  $("dashboard").classList.remove("hidden");
+  await loadRsvp();
+}
+
+async function loadRsvp(){
+  const { data, error } = await sb.from("rsvp")
+    .select("*")
+    .order("created_at", {ascending:false});
+
+  if(error){ alert("Gagal mengambil data RSVP: " + error.message); return; }
+  allRows = data || [];
+  render(allRows);
+}
+
+function render(rows){
+  $("totalRsvp").textContent = rows.length;
+  $("totalAttending").textContent = rows.filter(x => x.kehadiran === "Hadir").length;
+  $("totalGuests").textContent = rows
+    .filter(x => x.kehadiran === "Hadir")
+    .reduce((sum,x) => sum + Number(x.jumlah_tetamu || 0), 0);
+
+  $("rsvpRows").innerHTML = rows.map(x => `
+    <tr>
+      <td>${esc(x.nama)}</td>
+      <td>${esc(x.telefon || "-")}</td>
+      <td><span class="badge">${esc(x.kehadiran)}</span></td>
+      <td>${Number(x.jumlah_tetamu || 0)}</td>
+      <td>${esc(x.ucapan || "-")}</td>
+      <td>${new Date(x.created_at).toLocaleString("ms-MY")}</td>
+    </tr>
+  `).join("");
+}
+
+$("search").addEventListener("input", e => {
+  const q = e.target.value.toLowerCase();
+  render(allRows.filter(x =>
+    (x.nama || "").toLowerCase().includes(q) ||
+    (x.telefon || "").toLowerCase().includes(q)
+  ));
+});
+
+$("exportBtn").addEventListener("click", () => {
+  const header = ["Nama","Telefon","Kehadiran","Jumlah Tetamu","Ucapan","Tarikh"];
+  const lines = [header, ...allRows.map(x => [
+    x.nama, x.telefon || "", x.kehadiran, x.jumlah_tetamu, x.ucapan || "", x.created_at
+  ])].map(row => row.map(v => `"${String(v ?? "").replaceAll('"','""')}"`).join(","));
+  const blob = new Blob(["\ufeff" + lines.join("\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "rsvp-ahmad-qurratu.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+function esc(v){
+  return String(v).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[c]));
+}
+
+sb.auth.getSession().then(({data}) => {
+  if(data.session) showDashboard();
+});
+</script>
+</body>
+</html>
